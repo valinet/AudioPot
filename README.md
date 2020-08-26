@@ -15,5 +15,5 @@ AudioPot is the software implementation for my audio volume knob project. Basica
 The project is divided in:
 
 * AudioPotArduino - Arduino code of the project, I tested it on an Arudino Nano
-* AudioPotService - a service that starts up the daemon as soon as possible and restarts it in case of failure
+* AudioPotService - a service that starts up the daemon as soon as possible and restarts it in case of failure - register by running`sc create AudioPot binPath= C:\...\AudioPotService.exe` in an administrative command window
 * AudioPot - main app, communicates with Arduino and changes volume accordingly, if needed
