@@ -1,6 +1,8 @@
 # AudioPot
 
-AudioPot is the software implementation for my audio volume knob project. Basically, I connected a potentiometer to an Arduino, and I output the values I read off it with the ADC to the serial port. On the client (works on Windows), I set the system volume proportional to the received value. Also, the potentiometer can be pressed down, triggering the reset button on the Arduino, which plays/pauses current media on the computer
+AudioPot is the software implementation for my audio volume knob project. Basically, I connected a potentiometer to an Arduino, and I output the values I read off it with the ADC to the serial port. On the client (works on Windows), I set the system volume proportional to the received value. Also, the potentiometer can be pressed down, triggering the reset button on the Arduino, which plays/pauses current media on the computer.
+
+Binaries are available in [Releases](https://github.com/valinet/AudioPot/releases).
 
 #### Concepts shown in this example:
 
@@ -19,6 +21,12 @@ In order to register the application as a service, run this in an elevated comma
 ```
 sc create AudioPot binPath= "C:\...\AudioPot.exe" DisplayName= AudioPot start= auto
 sc description AudioPot "AudioPot service (https://github.com/valinet/AudioPot)"
+```
+
+The service is set to start automatically at boot. To run immediatly, type:
+
+```
+sc start AudioPot
 ```
 
 Also, in the AudioPot folder, you will find sketch.ino, which is the Arudino code I use.
