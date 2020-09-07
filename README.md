@@ -12,7 +12,16 @@ AudioPot is the software implementation for my audio volume knob project. Basica
 
 ## Structure
 
-The project is divided in:
+The application is meant to be launched as a service. The service monitors the connection with the Arduino, and spawns a process of its own on the default window station, recreating in case it is killed or if it crashes. When launched as an executable, the application monitors for hardware changes and changes the volume based on commands received from the service though a names pipe. This is necessary because the service runs in a non interactive session, and thus cannot change desktop properties.
+
+In order to register the application as a service, run this in an elevated command window:
+
+```
+sc create AudioPot binPath= "C:\...\AudioPot.exe" DisplayName= AudioPot start= auto
+sc description AudioPot "AudioPot service (https://github.com/valinet/AudioPot)"
+```
+
+Also, in the AudioPot folder, you will find sketch.ino, which is the Arudino code I use.
 
 * AudioPotArduino - Arduino code of the project, I tested it on an Arudino Nano
 * AudioPotService - a service that starts up the daemon as soon as possible and restarts it in case of failure - register by running`sc create AudioPot binPath= C:\...\AudioPotService.exe` in an administrative command window

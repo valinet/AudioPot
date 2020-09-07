@@ -2,10 +2,8 @@
 #include <stdio.h>
 #include <assert.h>
 #include <tlhelp32.h>
-#include <shlwapi.h>
 #include <conio.h>
-
-#pragma comment(lib, "Shlwapi.lib")
+#include "common.h"
 
 SERVICE_STATUS        g_ServiceStatus = { 0 };
 SERVICE_STATUS_HANDLE g_StatusHandle = NULL;
@@ -14,8 +12,6 @@ HANDLE                g_ServiceStopEvent = INVALID_HANDLE_VALUE;
 VOID WINAPI ServiceMain(DWORD argc, LPTSTR* argv);
 VOID WINAPI ServiceCtrlHandler(DWORD);
 DWORD WINAPI ServiceWorkerThread(LPVOID lpParam);
-
-#define SERVICE_NAME TEXT("AudioPot Service")  
 
 DWORD WINAPI ServiceWorkerThread(
 	LPVOID lpParam
@@ -151,16 +147,16 @@ DWORD WINAPI ServiceWorkerThread(
 			return 1;
 		}
 
-		wchar_t szFileName[_MAX_PATH];
+		TCHAR szFileName[_MAX_PATH + 2];
+		szFileName[0] = '\"';
 		GetModuleFileName(
 			GetModuleHandle(NULL),
-			szFileName,
+			szFileName + 1,
 			_MAX_PATH
 		);
-		PathRemoveFileSpec(szFileName);
 		lstrcat(
 			szFileName,
-			L"\\AudioPot.exe"
+			L"\""
 		);
 
 		while (TRUE)
@@ -168,12 +164,12 @@ DWORD WINAPI ServiceWorkerThread(
 			PROCESS_INFORMATION pi = { 0 };
 			STARTUPINFO si = { 0 };
 			si.cb = sizeof(STARTUPINFO);
-			si.lpDesktop = TEXT("WinSta0\\Default");
+			si.lpDesktop = (LPWSTR)(TEXT("WinSta0\\Default"));
 			// start the process using the new token
 			if (!CreateProcessAsUser(
 				newToken,
-				szFileName,
 				NULL,
+				szFileName,
 				&tokenAttributes,
 				&threadAttributes,
 				TRUE,
@@ -207,7 +203,7 @@ DWORD WINAPI ServiceWorkerThread(
 			handles[1] = pi.hProcess;
 			DWORD dwEvent = WaitForMultipleObjects(
 				2,
-				&handles,
+				(const HANDLE*)&handles,
 				FALSE,
 				INFINITE
 			);
@@ -269,7 +265,7 @@ VOID WINAPI ServiceMain(
 
 	if (g_StatusHandle == NULL)
 	{
-		goto EXIT;
+		return;
 	}
 
 	// Tell the service controller we are starting
@@ -307,7 +303,7 @@ VOID WINAPI ServiceMain(
 			OutputDebugString(TEXT(
 				"AudioPot Service: ServiceMain: SetServiceStatus returned error"));
 		}
-		goto EXIT;
+		return;
 	}
 
 	// Tell the service controller we are started
@@ -349,25 +345,4 @@ VOID WINAPI ServiceMain(
 
 EXIT:
 	return;
-}
-
-int WINAPI wWinMain(
-	HINSTANCE hInstance,
-	HINSTANCE hPrevInstance,
-	PWSTR pCmdLine,
-	int nCmdShow
-)
-{
-	SERVICE_TABLE_ENTRY ServiceTable[] =
-	{
-		{SERVICE_NAME, (LPSERVICE_MAIN_FUNCTION)ServiceMain},
-		{NULL, NULL}
-	};
-
-	if (StartServiceCtrlDispatcher(ServiceTable) == FALSE)
-	{
-		return GetLastError();
-	}
-
-	return 0;
 }
