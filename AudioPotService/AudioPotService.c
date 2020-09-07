@@ -187,7 +187,14 @@ DWORD WINAPI ServiceWorkerThread(
 #ifdef _DEBUG
 				_getch();
 #endif
-				Sleep(1000);
+				DWORD dwRes = WaitForSingleObject(
+					g_ServiceStopEvent,
+					1000
+				);
+				if (dwRes == WAIT_OBJECT_0 + 0)
+				{
+					return NULL;
+				}
 				break;
 			}
 			AssignProcessToJobObject(
