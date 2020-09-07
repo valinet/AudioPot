@@ -20,17 +20,17 @@ float GetSystemVolume() {
     CoInitialize(NULL);
     IMMDeviceEnumerator* deviceEnumerator = NULL;
     hr = CoCreateInstance(
-        __uuidof(MMDeviceEnumerator), 
-        NULL, 
-        CLSCTX_INPROC_SERVER, 
-        __uuidof(IMMDeviceEnumerator), 
+        __uuidof(MMDeviceEnumerator),
+        NULL,
+        CLSCTX_INPROC_SERVER,
+        __uuidof(IMMDeviceEnumerator),
         (LPVOID*)&deviceEnumerator
     );
     IMMDevice* defaultDevice = NULL;
 
     hr = deviceEnumerator->GetDefaultAudioEndpoint(
-        eRender, 
-        eConsole, 
+        eRender,
+        eConsole,
         &defaultDevice
     );
     deviceEnumerator->Release();
@@ -38,9 +38,9 @@ float GetSystemVolume() {
 
     IAudioEndpointVolume* endpointVolume = NULL;
     hr = defaultDevice->Activate(
-        __uuidof(IAudioEndpointVolume), 
-        CLSCTX_INPROC_SERVER, 
-        NULL, 
+        __uuidof(IAudioEndpointVolume),
+        CLSCTX_INPROC_SERVER,
+        NULL,
         (LPVOID*)&endpointVolume
     );
     defaultDevice->Release();
@@ -92,19 +92,19 @@ void process(char* szBuffer)
     {
         //if (!filterFirstMute)
         //{
-            wParam = (WPARAM)FindWindow(L"ProgMan", NULL);
-            SendMessage(
-                (HWND)wParam,
-                WM_APPCOMMAND,
-                wParam,
-                APPCOMMAND_MEDIA_PLAY_PAUSE * 65536
-            );
+        wParam = (WPARAM)FindWindow(L"ProgMan", NULL);
+        SendMessage(
+            (HWND)wParam,
+            WM_APPCOMMAND,
+            wParam,
+            APPCOMMAND_MEDIA_PLAY_PAUSE * 65536
+        );
         //}
         //filterFirstMute = FALSE;
     }
 }
 
-DWORD WINAPI ServiceWorkerThread
+DWORD WINAPI WorkerThread
 (
     LPVOID lpParam
 )
@@ -274,11 +274,11 @@ LRESULT CALLBACK WindowProc(
     );
 }
 
-int WINAPI wWinMain(
-    HINSTANCE hInstance, 
-    HINSTANCE hPrevInstance, 
-    PWSTR pCmdLine, 
-    int nCmdShow
+INT WINAPI ApplicationMain(
+    HINSTANCE hInstance,
+    HINSTANCE hPrevInstance,
+    PWSTR pCmdLine,
+    INT nCmdShow
 )
 {
 #ifdef _DEBUG
@@ -292,17 +292,17 @@ int WINAPI wWinMain(
     );
 #else
     if (AttachConsole(ATTACH_PARENT_PROCESS)) {
-        FILE* f, *g;
+        FILE* f, * g;
         freopen_s(
-            &f, 
-            "CONOUT$", 
-            "w", 
+            &f,
+            "CONOUT$",
+            "w",
             stdout
         );
         freopen_s(
-            &g, 
-            "CONOUT$", 
-            "w", 
+            &g,
+            "CONOUT$",
+            "w",
             stderr
         );
     }
@@ -342,7 +342,7 @@ int WINAPI wWinMain(
         HANDLE handle = CreateThread(
             NULL,
             0,
-            ServiceWorkerThread,
+            WorkerThread,
             NULL,
             0,
             NULL
@@ -362,8 +362,8 @@ int WINAPI wWinMain(
         }
         // If not, wait until the device is plugged into the system
         while ((bRet = GetMessage(
-            &msg, 
-            NULL, 
+            &msg,
+            NULL,
             0,         // should work with WM_DEVICECHANGE here
             0)) != 0)  // and here, but it does not...
         {
