@@ -1,10 +1,11 @@
 #define _WIN32_DCOM
 #include <Windows.h>
-#include <iostream>
+#include <stdio.h>
 #include <mmdeviceapi.h>
 #include <endpointvolume.h>
 #include <conio.h>
 #include <Dbt.h>
+#include <initguid.h>
 
 #define BUFFER_SIZE 6
 
@@ -12,44 +13,102 @@
 
 //BOOL filterFirstMute = TRUE;
 
+DEFINE_GUID(CLSID_MMDeviceEnumerator, 
+    0xBCDE0395, 
+    0xE52F, 0x467C, 0x8E, 0x3D, 
+    0xC4, 0x57, 0x92, 0x91, 0x69, 0x2E
+);
+DEFINE_GUID(IID_IMMDeviceEnumerator, 
+    0xA95664D2, 
+    0x9614, 0x4F35, 0xA7, 0x46, 
+    0xDE, 0x8D, 0xB6, 0x36, 0x17, 0xE6
+);
+DEFINE_GUID(IID_IAudioEndpointVolume, 
+    0x5CDF2C82, 
+    0x841E, 0x4546, 0x97, 0x22, 
+    0x0C, 0xF7, 0x40, 0x78, 0x22, 0x9A
+);
+
+// ported to C from
 // https://stackoverflow.com/questions/50722026/how-to-get-and-set-system-volume-in-windows
 float GetSystemVolume() {
     HRESULT hr;
+    GUID guidMMDeviceEnumerator;
 
-    // -------------------------
-    CoInitialize(NULL);
+    hr = CoInitialize(NULL);
+    if (FAILED(hr))
+    {
+        return 0;
+    }
+
     IMMDeviceEnumerator* deviceEnumerator = NULL;
     hr = CoCreateInstance(
-        __uuidof(MMDeviceEnumerator),
+        &CLSID_MMDeviceEnumerator,
         NULL,
-        CLSCTX_INPROC_SERVER,
-        __uuidof(IMMDeviceEnumerator),
+        CLSCTX_ALL,
+        &IID_IMMDeviceEnumerator,
         (LPVOID*)&deviceEnumerator
     );
-    IMMDevice* defaultDevice = NULL;
+    if (FAILED(hr))
+    {
+        return 0;
+    }
 
-    hr = deviceEnumerator->GetDefaultAudioEndpoint(
+    IMMDevice* defaultDevice = NULL;
+    hr = deviceEnumerator->lpVtbl->GetDefaultAudioEndpoint(
+        deviceEnumerator,
         eRender,
         eConsole,
         &defaultDevice
     );
-    deviceEnumerator->Release();
+    if (FAILED(hr))
+    {
+        return 0;
+    }
+
+    deviceEnumerator->lpVtbl->Release(deviceEnumerator);
+    if (FAILED(hr))
+    {
+        return 0;
+    }
     deviceEnumerator = NULL;
 
     IAudioEndpointVolume* endpointVolume = NULL;
-    hr = defaultDevice->Activate(
-        __uuidof(IAudioEndpointVolume),
+    hr = defaultDevice->lpVtbl->Activate(
+        defaultDevice,
+        &IID_IAudioEndpointVolume,
         CLSCTX_INPROC_SERVER,
         NULL,
         (LPVOID*)&endpointVolume
     );
-    defaultDevice->Release();
+    if (hr != S_OK)
+    {
+        return 0;
+    }
+
+    defaultDevice->lpVtbl->Release(defaultDevice);
+    if (FAILED(hr))
+    {
+        return 0;
+    }
     defaultDevice = NULL;
 
     float currentVolume = 0;
-    //Current volume as a scalar
-    hr = endpointVolume->GetMasterVolumeLevelScalar(&currentVolume);
-    endpointVolume->Release();
+    hr = endpointVolume->lpVtbl->GetMasterVolumeLevelScalar(
+        endpointVolume,
+        &currentVolume
+    );
+    if (FAILED(hr))
+    {
+        return 0;
+    }
+
+    endpointVolume->lpVtbl->Release(endpointVolume);
+    if (FAILED(hr))
+    {
+        return 0;
+    }
+
     CoUninitialize();
 
     return currentVolume;
@@ -311,12 +370,12 @@ INT WINAPI ApplicationMain(
     WNDCLASS wndClass = { 0 };
     wndClass.lpfnWndProc = WindowProc;
     wndClass.hInstance = hInstance;
-    wndClass.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BACKGROUND);
+    wndClass.hbrBackground = (HBRUSH)(COLOR_BACKGROUND);
     wndClass.lpszClassName = APPLICATION_NAME;
 
     HWND hWnd = CreateWindowEx(
         NULL,
-        reinterpret_cast<LPCWSTR>(
+        (LPCWSTR)(
             MAKEINTATOM(
                 RegisterClass(&wndClass)
             )

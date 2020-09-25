@@ -19,9 +19,9 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="application.cpp" />
-    <ClCompile Include="main.cpp" />
-    <ClCompile Include="service.cpp" />
+    <ClCompile Include="application.c" />
+    <ClCompile Include="main.c" />
+    <ClCompile Include="service.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="common.h" />
