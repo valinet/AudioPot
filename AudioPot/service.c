@@ -8,6 +8,7 @@
 SERVICE_STATUS        g_ServiceStatus = { 0 };
 SERVICE_STATUS_HANDLE g_StatusHandle = NULL;
 HANDLE                g_ServiceStopEvent = INVALID_HANDLE_VALUE;
+HANDLE                g_ServiceSessionStartEvent = INVALID_HANDLE_VALUE;
 
 VOID WINAPI ServiceMain(DWORD argc, LPTSTR* argv);
 VOID WINAPI ServiceCtrlHandler(DWORD);
@@ -211,6 +212,35 @@ DWORD WINAPI ServiceWorkerThread(
 			{
 				return NULL;
 			}
+			else if (dwEvent == WAIT_OBJECT_0 + 1)
+			{
+				DWORD dwExitCode = 0;
+				if (GetExitCodeProcess(
+					pi.hProcess,
+					&dwExitCode
+				))
+				{
+					if (dwExitCode == MSG_SYSTEM_SHUTDOWN)
+					{
+						handles[0] = g_ServiceStopEvent;
+						handles[1] = g_ServiceSessionStartEvent;
+						DWORD dwEvent = WaitForMultipleObjects(
+							2,
+							(const HANDLE*)&handles,
+							FALSE,
+							INFINITE
+						);
+						if (dwEvent == WAIT_OBJECT_0 + 0)
+						{
+							return NULL;
+						}
+						else if (dwEvent == WAIT_OBJECT_0 + 1)
+						{
+							ResetEvent(g_ServiceSessionStartEvent);
+						}
+					}
+				}
+			}
 		}
 	}
 
@@ -219,10 +249,24 @@ DWORD WINAPI ServiceWorkerThread(
 	return NULL;
 }
 
-VOID WINAPI ServiceCtrlHandler(DWORD CtrlCode)
+VOID WINAPI ServiceCtrlHandlerEx(
+	DWORD dwControl,
+	DWORD dwEventType,
+	LPVOID lpEventData,
+	LPVOID lpContext
+)
 {
-	switch (CtrlCode)
+	switch (dwControl)
 	{
+	case SERVICE_CONTROL_SESSIONCHANGE:
+
+		if (dwEventType == WTS_CONSOLE_CONNECT)
+		{
+			SetEvent(g_ServiceSessionStartEvent);
+		}
+
+		break;
+
 	case SERVICE_CONTROL_STOP:
 
 		if (g_ServiceStatus.dwCurrentState != SERVICE_RUNNING)
@@ -261,7 +305,11 @@ VOID WINAPI ServiceMain(
 	DWORD Status = E_FAIL;
 
 	// Register our service control handler with the SCM
-	g_StatusHandle = RegisterServiceCtrlHandler(SERVICE_NAME, ServiceCtrlHandler);
+	g_StatusHandle = RegisterServiceCtrlHandlerEx(
+		SERVICE_NAME, 
+		ServiceCtrlHandlerEx,
+		NULL
+	);
 
 	if (g_StatusHandle == NULL)
 	{
@@ -269,15 +317,21 @@ VOID WINAPI ServiceMain(
 	}
 
 	// Tell the service controller we are starting
-	ZeroMemory(&g_ServiceStatus, sizeof(g_ServiceStatus));
+	ZeroMemory(
+		&g_ServiceStatus, 
+		sizeof(g_ServiceStatus)
+	);
 	g_ServiceStatus.dwServiceType = SERVICE_WIN32_OWN_PROCESS;
-	g_ServiceStatus.dwControlsAccepted = 0;
+	g_ServiceStatus.dwControlsAccepted = SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SESSIONCHANGE;
 	g_ServiceStatus.dwCurrentState = SERVICE_START_PENDING;
-	g_ServiceStatus.dwWin32ExitCode = 0;
+	g_ServiceStatus.dwWin32ExitCode = NO_ERROR;
 	g_ServiceStatus.dwServiceSpecificExitCode = 0;
 	g_ServiceStatus.dwCheckPoint = 0;
 
-	if (SetServiceStatus(g_StatusHandle, &g_ServiceStatus) == FALSE)
+	if (SetServiceStatus(
+		g_StatusHandle, 
+		&g_ServiceStatus
+	) == FALSE)
 	{
 		OutputDebugString(TEXT(
 			"AudioPot Service: ServiceMain: SetServiceStatus returned error"));
@@ -288,8 +342,19 @@ VOID WINAPI ServiceMain(
 	 */
 
 	 // Create a service stop event to wait on later
-	g_ServiceStopEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
-	if (g_ServiceStopEvent == NULL)
+	g_ServiceStopEvent = CreateEvent(
+		NULL, 
+		TRUE, 
+		FALSE, 
+		NULL
+	);
+	g_ServiceSessionStartEvent = CreateEvent(
+		NULL,
+		TRUE,
+		FALSE,
+		NULL
+	);
+	if (g_ServiceStopEvent == NULL || g_ServiceSessionStartEvent == NULL)
 	{
 		// Error creating event
 		// Tell service controller we are stopped and exit
@@ -298,7 +363,10 @@ VOID WINAPI ServiceMain(
 		g_ServiceStatus.dwWin32ExitCode = GetLastError();
 		g_ServiceStatus.dwCheckPoint = 1;
 
-		if (SetServiceStatus(g_StatusHandle, &g_ServiceStatus) == FALSE)
+		if (SetServiceStatus(
+			g_StatusHandle, 
+			&g_ServiceStatus
+		) == FALSE)
 		{
 			OutputDebugString(TEXT(
 				"AudioPot Service: ServiceMain: SetServiceStatus returned error"));
@@ -312,24 +380,54 @@ VOID WINAPI ServiceMain(
 	g_ServiceStatus.dwWin32ExitCode = 0;
 	g_ServiceStatus.dwCheckPoint = 0;
 
-	if (SetServiceStatus(g_StatusHandle, &g_ServiceStatus) == FALSE)
+	if (SetServiceStatus(
+		g_StatusHandle, 
+		&g_ServiceStatus
+	) == FALSE)
 	{
 		OutputDebugString(TEXT(
 			"AudioPot Service: ServiceMain: SetServiceStatus returned error"));
 	}
 
 	// Start a thread that will perform the main task of the service
-	HANDLE hThread = CreateThread(NULL, 0, ServiceWorkerThread, NULL, 0, NULL);
+	HANDLE hThread = CreateThread(
+		NULL, 
+		0, 
+		ServiceWorkerThread, 
+		NULL, 
+		0, 
+		NULL
+	);
+	if (hThread == NULL)
+	{
+		// Error creating event
+		// Tell service controller we are stopped and exit
+		g_ServiceStatus.dwControlsAccepted = 0;
+		g_ServiceStatus.dwCurrentState = SERVICE_STOPPED;
+		g_ServiceStatus.dwWin32ExitCode = GetLastError();
+		g_ServiceStatus.dwCheckPoint = 1;
+
+		if (SetServiceStatus(
+			g_StatusHandle,
+			&g_ServiceStatus
+		) == FALSE)
+		{
+			OutputDebugString(TEXT(
+				"AudioPot Service: ServiceMain: SetServiceStatus returned error"));
+		}
+		return;
+
+	}
 
 	// Wait until our worker thread exits signaling that the service needs to stop
 	WaitForSingleObject(hThread, INFINITE);
-
 
 	/*
 	 * Perform any cleanup tasks
 	 */
 
 	CloseHandle(g_ServiceStopEvent);
+	CloseHandle(g_ServiceSessionStartEvent);
 
 	// Tell the service controller we are stopped
 	g_ServiceStatus.dwControlsAccepted = 0;

@@ -6,11 +6,16 @@
 #include <conio.h>
 #include <Dbt.h>
 #include <initguid.h>
+#include "common.h"
 
 #define BUFFER_SIZE 6
 
 #define APPLICATION_NAME TEXT("AudioPot")
 
+HANDLE g_DeviceInsertedEvent = INVALID_HANDLE_VALUE;
+HANDLE g_ApplicationShutDown = INVALID_HANDLE_VALUE;
+DWORD dwWin32ExitCode = 0;
+BOOL bMonitorDevices = FALSE;
 //BOOL filterFirstMute = TRUE;
 
 DEFINE_GUID(CLSID_MMDeviceEnumerator, 
@@ -45,7 +50,7 @@ float GetSystemVolume() {
     hr = CoCreateInstance(
         &CLSID_MMDeviceEnumerator,
         NULL,
-        CLSCTX_ALL,
+        CLSCTX_INPROC_SERVER,
         &IID_IMMDeviceEnumerator,
         (LPVOID*)&deviceEnumerator
     );
@@ -254,8 +259,13 @@ DWORD WINAPI WorkerThread
             printf("ReadFile: %d\n", err);
             break;
         }
-        dwRet = WaitForSingleObject(
-            overlapped.hEvent,
+        HANDLE handles[2];
+        handles[0] = overlapped.hEvent;
+        handles[1] = g_ApplicationShutDown;
+        dwRet = WaitForMultipleObjects(
+            2,
+            (const HANDLE*)&handles,
+            FALSE,
             INFINITE
         );
         if (dwRet == WAIT_OBJECT_0 + 0)
@@ -282,6 +292,10 @@ DWORD WINAPI WorkerThread
                 if (dwPos < BUFFER_SIZE - 1) dwPos++;
             }
         }
+        else if (dwRet == WAIT_OBJECT_0 + 1)
+        {
+            break;
+        }
         else
         {
             printf("WaitForSingleObject: %d\n", GetLastError());
@@ -301,28 +315,39 @@ LRESULT CALLBACK WindowProc(
     _In_ LPARAM lParam
 )
 {
-    switch (uMsg)
+    if (bMonitorDevices)
     {
-    case WM_DEVICECHANGE:
-    {
-        switch (wParam)
+        switch (uMsg)
         {
-        case DBT_DEVICEARRIVAL:
+        case WM_DEVICECHANGE:
         {
-            DEV_BROADCAST_HDR* hdr = (DEV_BROADCAST_HDR*)lParam;
-            if (hdr->dbch_devicetype == DBT_DEVTYP_PORT)
+            switch (wParam)
             {
-                DEV_BROADCAST_PORT* port = (DEV_BROADCAST_PORT*)lParam;
-                if (!wcscmp(port->dbcp_name, TEXT("COM240")))
+            case DBT_DEVICEARRIVAL:
+            {
+                DEV_BROADCAST_HDR* hdr = (DEV_BROADCAST_HDR*)lParam;
+                if (hdr->dbch_devicetype == DBT_DEVTYP_PORT)
                 {
-                    wprintf(TEXT("%s\n"), port->dbcp_name);
-                    PostQuitMessage(0);
+                    DEV_BROADCAST_PORT* port = (DEV_BROADCAST_PORT*)lParam;
+                    if (!wcscmp(port->dbcp_name, TEXT("COM240")))
+                    {
+                        wprintf(TEXT("inserted %s\n"), port->dbcp_name);
+                        SetEvent(g_DeviceInsertedEvent);
+                    }
                 }
+                break;
+            }
             }
             break;
         }
         }
-        break;
+    }
+    switch (uMsg)
+    {
+    case WM_ENDSESSION:
+    {
+        dwWin32ExitCode = MSG_SYSTEM_SHUTDOWN;
+        return 0;
     }
     }
     return DefWindowProc(
@@ -367,6 +392,27 @@ INT WINAPI ApplicationMain(
     }
 #endif
 
+    g_DeviceInsertedEvent = CreateEvent(
+        NULL,
+        TRUE,
+        FALSE,
+        NULL
+    );
+    if (g_DeviceInsertedEvent == NULL)
+    {
+        return 0;
+    }
+    g_ApplicationShutDown = CreateEvent(
+        NULL,
+        TRUE,
+        FALSE,
+        NULL
+    );
+    if (g_ApplicationShutDown == NULL)
+    {
+        return 0;
+    }
+
     WNDCLASS wndClass = { 0 };
     wndClass.lpfnWndProc = WindowProc;
     wndClass.hInstance = hInstance;
@@ -394,11 +440,15 @@ INT WINAPI ApplicationMain(
 
     MSG msg;
     BOOL bRet;
+    BOOL bQuit = FALSE;
+    HANDLE handle = INVALID_HANDLE_VALUE;
     while (TRUE)
     {
+        bMonitorDevices = FALSE;
+
         //filterFirstMute = TRUE;
         // Try to communicate with audio pot
-        HANDLE handle = CreateThread(
+        handle = CreateThread(
             NULL,
             0,
             WorkerThread,
@@ -410,35 +460,79 @@ INT WINAPI ApplicationMain(
         {
             break;
         }
-        DWORD dwResult = WaitForSingleObject(
-            handle,
-            INFINITE
-        );
-        // Communication ended, check if error
-        if (dwResult == WAIT_FAILED)
+
+        while (TRUE)
+        {
+            HANDLE handles[1];
+            if (bMonitorDevices)
+            {
+                printf("wait for insert\n");
+                handles[0] = g_DeviceInsertedEvent;
+            }
+            else
+            {
+                printf("talking to device...\n");
+                handles[0] = handle;
+            }
+            DWORD dwResult = MsgWaitForMultipleObjects(
+                1,
+                (const HANDLE*)&handles,
+                FALSE,
+                INFINITE,
+                QS_ALLINPUT
+            );
+            if (dwResult == WAIT_OBJECT_0 + 0)
+            {
+                if (bMonitorDevices)
+                {
+                    printf("inserted\n");       
+                    ResetEvent(g_DeviceInsertedEvent);
+                    break;
+                }
+                else
+                {
+                    printf("removed\n");
+                    bMonitorDevices = TRUE;
+                    CloseHandle(handle);
+                }
+            }
+            else if (dwResult == WAIT_OBJECT_0 + 1)
+            {
+                while (bRet = PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+                    // application quit requested or an error occurred
+                    if (bRet == 0 || bRet == -1)
+                    {
+                        if (!bMonitorDevices)
+                        {
+                            SetEvent(g_ApplicationShutDown);
+                            WaitForSingleObject(
+                                handle,
+                                INFINITE
+                            );
+                            CloseHandle(handle);
+                        }
+                        bQuit = TRUE;
+                        break;
+                    }
+                    else
+                    {
+                        printf("msg\n");
+                        TranslateMessage(&msg);
+                        DispatchMessage(&msg);
+                    }
+                }
+            }
+            printf("!\n");
+        }
+
+        if (bQuit)
         {
             break;
         }
-        // If not, wait until the device is plugged into the system
-        while ((bRet = GetMessage(
-            &msg,
-            NULL,
-            0,         // should work with WM_DEVICECHANGE here
-            0)) != 0)  // and here, but it does not...
-        {
-            // An error occured
-            if (bRet == -1)
-            {
-                break;
-            }
-            // Device connected, will send WM_QUIT to retry communication
-            else
-            {
-                TranslateMessage(&msg);
-                DispatchMessage(&msg);
-            }
-        }
+        printf(".\n");
     }
 
-    return 0;
+    CloseHandle(g_ApplicationShutDown);
+    CloseHandle(g_DeviceInsertedEvent);
+    return dwWin32ExitCode;
 }
