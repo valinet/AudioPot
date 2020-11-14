@@ -16,6 +16,8 @@
 
 #define BUFFER_SIZE 10
 
+bool justStarted = true;
+
 /*
  References:
  https://stackoverflow.com/questions/11045814/emulate-media-key-press-on-mac
@@ -213,7 +215,14 @@ int main(
             if (!strcmp(szBuffer, "m"))
             {
                 //printf("m\n");
-                HIDPostAuxKey(NX_KEYTYPE_PLAY);
+                if (justStarted)
+                {
+                    justStarted = false;
+                }
+                else
+                {
+                    HIDPostAuxKey(NX_KEYTYPE_PLAY);
+                }
             }
             else
             {
